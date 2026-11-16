@@ -110,13 +110,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
       const auto& caloHit = assoc.getFrom();
       debug() << "Sim hit id and index: " << simHit.id() << " " << simHit.id().index << endmsg;
       debug() << "Calo hit id and index: " << caloHit.id() << " " << caloHit.id().index << endmsg;
-      if (nhits[simHit.id().index + ih * (1 << 24)] > 0) {
-        warning() << "Sim hit with more than one calo hit!!!"
-                  << endmsg; // GM: maybe this will be possible if we split hits based on timing?
-        continue;
-      } else {
-        nhits[simHit.id().index + ih * (1 << 24)] = 1;
-      }
+      nhits[simHit.id().index + ih * (1 << 24)] = 1;
 
       // extract digitised over deposited energy
       // assuming here there is at most one simhit per calo hit (0 in the case of noise hit)
