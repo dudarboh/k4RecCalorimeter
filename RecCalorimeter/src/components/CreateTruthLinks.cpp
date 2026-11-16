@@ -483,8 +483,8 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
   debug() << "Finished linking calo hits to MC particles" << endmsg;
 
   // Build cellID -> links index once so the cluster loop below is O(hits) not O(hits x links).
-  std::unordered_map<uint64_t, std::vector<edm4hep::CaloHitMCParticleLink>> cellIdToLinks;
-  for (const auto& assoc : *caloHitMCParticleLinkCollection)
+  std::unordered_map<uint64_t, std::vector<edm4hep::MutableCaloHitMCParticleLink>> cellIdToLinks;
+  for (auto assoc : *caloHitMCParticleLinkCollection)
     cellIdToLinks[assoc.getFrom().getCellID()].push_back(assoc);
 
   debug() << "Creating Cluster<->MCParticle links using CaloHit<->MCParticle links, re-assigning the latter in some "
@@ -541,6 +541,38 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
         } // end loop over hits -> MCParticle links
       } // end loop over cluster hits
       ecalohitsum_unknown = ecalohitsum - ecalohitsum_known;
+
+      // A particle with a backscattered parent (or a non-generator particle without parents) is moved to its
+      // nearest ancestor contributing to this cluster, as the backscatter scattered back into its own cluster.
+      auto isBackscatterDescendant = [](const edm4hep::MCParticle& mcp) {
+        return mcp.getGeneratorStatus() != 1 && (mcp.getParents().empty() || mcp.getParents()[0].isBackscatter());
+      };
+      std::map<int, int> ancestorOfMcp;
+      for (const auto& [idx, e] : mcpEnergy) {
+        const auto& mcp = mcparticles->at(idx);
+        if (!isBackscatterDescendant(mcp))
+          continue;
+        auto ancestors = mcp.getParents();
+        while (!ancestors.empty() && ancestors[0].getGeneratorStatus() != 2) {
+          const auto ancestor = ancestors[0];
+          if (mcpEnergy.count(ancestor.id().index) && !isBackscatterDescendant(ancestor)) {
+            ancestorOfMcp[idx] = ancestor.id().index;
+            break;
+          }
+          ancestors = ancestor.getParents();
+        }
+      }
+      for (auto it = cluster.hits_begin(); it != cluster.hits_end(); it++) {
+        for (auto& link : cellIdToLinks[it->getCellID()]) {
+          auto ancestor = ancestorOfMcp.find(link.getTo().id().index);
+          if (ancestor != ancestorOfMcp.end())
+            link.setTo(mcparticles->at(ancestor->second));
+        }
+      }
+      for (const auto& [idx, ancestorIdx] : ancestorOfMcp) {
+        mcpEnergy[ancestorIdx] += mcpEnergy[idx];
+        mcpEnergy.erase(idx);
+      }
       debug() << "Calo energy in hit: all/known/unknown = " << ecalohitsum << " " << ecalohitsum_known << " "
               << ecalohitsum_unknown << endmsg;
 
