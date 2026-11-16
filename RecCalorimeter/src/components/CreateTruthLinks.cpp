@@ -102,6 +102,10 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
         m_cell_hit_linkCollectionHandles[ih]->get();
     debug() << "Collection size: " << caloHitSimCaloHitLinks->size() << endmsg;
 
+    std::map<edm4hep::CalorimeterHit, double> simEnergyOfCaloHits;
+    for (const auto& assoc : *caloHitSimCaloHitLinks)
+      simEnergyOfCaloHits[assoc.getFrom()] += assoc.getTo().getEnergy();
+
     // Loop over the G4 hits, find the associated calo hits, then loop over
     // the G4 hit contribution to calculate contribution of each MCParticle to the calo hit
     for (const auto& assoc : *caloHitSimCaloHitLinks) {
@@ -112,9 +116,8 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
       debug() << "Calo hit id and index: " << caloHit.id() << " " << caloHit.id().index << endmsg;
       nhits[simHit.id().index + ih * (1 << 24)] = 1;
 
-      // extract digitised over deposited energy
-      // assuming here there is at most one simhit per calo hit (0 in the case of noise hit)
-      double calib_factor = caloHit.getEnergy() / simHit.getEnergy();
+      // extract digitised over deposited energy of all sim hits of this calo hit
+      double calib_factor = caloHit.getEnergy() / simEnergyOfCaloHits[caloHit];
       debug() << "Calib factor = " << calib_factor << endmsg;
 
       // now loop over truth contributions
